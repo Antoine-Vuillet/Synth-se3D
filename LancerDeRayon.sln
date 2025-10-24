@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36310.24 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LancerDeRayon", "LancerDeRayon\LancerDeRayon.vcxproj", "{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Debug|x64.ActiveCfg = Debug|x64
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Debug|x64.Build.0 = Debug|x64
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Debug|x86.ActiveCfg = Debug|Win32
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Debug|x86.Build.0 = Debug|Win32
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Release|x64.ActiveCfg = Release|x64
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Release|x64.Build.0 = Release|x64
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Release|x86.ActiveCfg = Release|Win32
+		{76E43D4C-25F3-4467-A8CB-1C10E4F938EF}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {364B5722-C526-437B-ACA8-9F4D5151346B}
+	EndGlobalSection
+EndGlobal
