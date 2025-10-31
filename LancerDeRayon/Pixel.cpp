@@ -1,16 +1,16 @@
 #include "Pixel.h"
 
 Pixel::Pixel(float r, float g, float b)
-    : color({ r, g, b }) {
+    : color(r, g, b) {
 }
 
 Pixel::Pixel(const Vector& rgb)
     : color(rgb) {
 }
 
-float Pixel::r() const { return color.getValues()[0]; }
-float Pixel::g() const { return color.getValues()[1]; }
-float Pixel::b() const { return color.getValues()[2]; }
+float Pixel::r() const { return color.x; }
+float Pixel::g() const { return color.y; }
+float Pixel::b() const { return color.z; }
 
 // Static constants
 const Pixel Pixel::WHITE(255.0f, 255.0f, 255.0f);

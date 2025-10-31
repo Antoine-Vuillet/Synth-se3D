@@ -13,6 +13,7 @@ public:
 
     Pixel(float r, float g, float b);
     Pixel(const Vector& rgb);
+	Pixel() : color({ 0.0f, 0.0f, 0.0f }) {}
 
     float r() const;
     float g() const;
