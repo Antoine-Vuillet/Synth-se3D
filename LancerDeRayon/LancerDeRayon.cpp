@@ -10,6 +10,17 @@
 #include "MyVector.h"
 #include "Pixel.h"
 #include "Rayon.h"
+#include <omp.h>
+#include <random>
+
+
+thread_local std::mt19937 rng(std::random_device{}());
+thread_local std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+
+inline float randomFloat() {
+    return dist(rng);
+}
+
 
 class Sphere
 {
@@ -73,7 +84,6 @@ struct Light {
     Vector emission;
 };
 
-
 void write_image(const std::string& filename, int width, int height, const std::vector<Pixel>& p) {
     std::ofstream out(filename, std::ios::binary);
     if (!out) {
@@ -131,12 +141,17 @@ std::pair<int, float> intersectMult(const Rayon& r, const std::vector<Object>& o
     return std::make_pair(hitIndex, closest);
 }
 
-Pixel radiance(const Rayon& r) {
+Vector reflect(Vector n, Vector wi) {
+    float proj = -n.dot(wi);
+    return (n * (2 * proj) + wi);
+}
+
+Vector radiance(const Rayon& r) {
     static const std::vector<Object> scene = []() {
         std::vector<Object> s;
         s.reserve(7);
-        s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
-        s.push_back(Object(Sphere(Vector({ 700.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
+        s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
+        s.push_back(Object(Sphere(Vector({ 700.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
         s.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse)));
         s.push_back(Object(Sphere(Vector({ -100000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 0.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
         s.push_back(Object(Sphere(Vector({ 500.0f, 101000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
@@ -146,11 +161,11 @@ Pixel radiance(const Rayon& r) {
         }();
 
     std::vector<Light> lights = {
-    { Vector({500.0f, 500.0f, 500.0f}), Vector({200000.0f, 200000.0f, 200000.0f}) },
-    { Vector({500.0f, 800.0f, 500.0f}), Vector({100000.0f, 100000.0f, 150000.0f}) }
+        {Vector({500.0f, 500.0f, 500.0f}), Vector({200000.0f,200000.0f,200000.0f})},
+        {Vector({500.0f, 800.0f, 500.0f}), Vector({100000.0f,100000.0f,200000.0f})}
     };
 
-    Vector total_light({ 0.0f, 0.0f, 0.0f });
+    Vector total_light({ 0.0f,0.0f,0.0f });
 
     auto hit = intersectMult(r, scene);
     if (hit.first != -1) {
@@ -158,38 +173,49 @@ Pixel radiance(const Rayon& r) {
         const Object& hitObject = scene[hit.first];
         Vector x = r.origin + (r.direction * t);
         Vector normal = (x - hitObject.sphere.center).normalize();
-
-        for (const auto& light : lights) {
-            Vector direction_to_light = light.position - x;
-            float light_distance = direction_to_light.dot(direction_to_light);
-            Vector direction_to_light_normalized = direction_to_light.normalize();
-
-            float coef = std::max(0.0f, normal.dot(direction_to_light_normalized)) / light_distance;
-
-            float epsilon = 0.1f;
-            auto hit_Light = intersectMult(Rayon(x + direction_to_light_normalized * epsilon, direction_to_light_normalized), scene);
-
-            bool canSeeLightSource = true;
-            if (hit_Light.first != -1) {
-                float t_block = hit_Light.second;
-                if ((t_block * t_block) < light_distance) {
-                    canSeeLightSource = false;
+        float epsilon = 0.1f;
+        if (hitObject.material.behaviour == MaterialBehaviour::Diffuse) {
+            for (const auto& light : lights) {
+                Vector direction_to_light = light.position - x;
+                float light_distance = direction_to_light.dot(direction_to_light);
+                Vector direction_to_light_normalized = direction_to_light.normalize();
+                float coef = std::max(0.0f, normal.dot(direction_to_light_normalized)) / light_distance;                
+                auto hit_Light = intersectMult(Rayon(x + direction_to_light_normalized * epsilon, direction_to_light_normalized), scene);
+                //Ma logique est opposée à celle de guibou sur ce qui suit pour une raison que j'ignore (Il avait tort, c'est pour ça gneheheh)
+                bool canSeeLightSource = true;
+                if (hit_Light.first != -1) {
+                    float t_block = hit_Light.second;
+                    if ((t_block * t_block) < light_distance) {
+                        canSeeLightSource = false;
+                    }
                 }
+                Vector visibility;
+                if (canSeeLightSource) {
+                    visibility = Vector({ 1.0f,1.0f,1.0f });
+                }
+                else {
+
+                    visibility = Vector({ 0.0f,0.0f,0.0f });
+                }
+                total_light = total_light + visibility * (hitObject.material.color * coef) * light.emission;
             }
 
-            Vector visibility = canSeeLightSource ? Vector({ 1.0f, 1.0f, 1.0f })
-                : Vector({ 0.0f, 0.0f, 0.0f });
-
-            // Contribution de cette lumière
-            total_light = total_light + (visibility * (hitObject.material.color * coef) * light.emission);
+            return Pixel(total_light).color;
         }
-
-        return Pixel(total_light);
+        else if (hitObject.material.behaviour==MaterialBehaviour::Glass)
+        {
+            return Pixel::BLACK.color;
+        }
+        else if (hitObject.material.behaviour == MaterialBehaviour::Mirror) {
+            Vector reflectedDirection = reflect(normal, r.direction);
+            Rayon reflectedRay = Rayon(x + (reflectedDirection * x), reflectedDirection);
+            
+        }
+        
     }
     else {
-        return Pixel::BLACK;
+        return Pixel::BLACK.color;
     }
-
 }
 
 Pixel raytrace(float x, float y) {
@@ -209,63 +235,56 @@ int main() {
 
     int width = 1000;
     int height = 1000;
-    std::vector<Pixel> pixels;
-    pixels.resize(width * height); // allocation unique
+    std::vector<Pixel> pixels(width * height);
 
     using clock = std::chrono::high_resolution_clock;
     auto t0 = clock::now();
 
-    unsigned int numThreads = std::thread::hardware_concurrency();
-    if (numThreads == 0) numThreads = 4; // fallback
-
     std::atomic<int> rowsDone(0);
-    const int progressInterval = 50; // n'affiche la progression que toutes les n lignes (réduit le cout IO)
+    const int progressInterval = 50;
 
-    auto worker = [&](int y0, int y1) {
-        for (int y = y0; y < y1; ++y) {
-            for (int x = 0; x < width; ++x) {
-                pixels[y * width + x] = raytrace(static_cast<float>(x), static_cast<float>(y));
+#pragma omp parallel for schedule(static)
+    for (int y = 0; y < height; ++y) {
+        // Thread-local random generator for antialiasing
+        thread_local std::mt19937 rng(std::random_device{}());
+        thread_local std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+        auto randomFloat = [&]() { return dist(rng); };
+
+        for (int x = 0; x < width; ++x) {
+            Vector colorSum({ 0, 0, 0 });
+            const int samples = 32;
+            for (int s = 0; s < samples; ++s) {
+                float u = x + randomFloat();
+                float v = y + randomFloat();
+                Pixel p = raytrace(u, v);
+                colorSum = colorSum + Vector({ p.r(), p.g(), p.b() });
             }
-            int done = ++rowsDone;
-            if (done % progressInterval == 0) {
-                // affichage léger et non bloquant
-                std::cout << "." << std::flush;
-            }
+            colorSum = colorSum * (1.0f / samples);
+            pixels[y * width + x] = Pixel(colorSum);
         }
-        };
 
-    auto t_before_threads = clock::now();
-
-    std::vector<std::thread> threads;
-    threads.reserve(numThreads);
-    int rowsPerThread = height / static_cast<int>(numThreads);
-    int y = 0;
-    for (unsigned int i = 0; i < numThreads; ++i) {
-        int y1 = (i + 1 == numThreads) ? height : (y + rowsPerThread);
-        threads.emplace_back(worker, y, y1);
-        y = y1;
+        int done = ++rowsDone;
+        if (done % progressInterval == 0) {
+            #pragma omp critical
+            std::cout << "." << std::flush;
+        }
     }
 
-    auto t_after_spawn = clock::now();
+    auto t_after_render = clock::now();
 
-    for (auto& t : threads) t.join();
-
-    auto t_after_join = clock::now();
-
-    // écrire l'image
+    // Écrire l'image sur disque
     write_image("first_image.ppm", width, height, pixels);
 
     auto t_after_write = clock::now();
 
     std::chrono::duration<double> total = t_after_write - t0;
-    std::chrono::duration<double> spawn_cost = t_after_spawn - t_before_threads;
-    std::chrono::duration<double> threads_runtime = t_after_join - t_after_spawn;
-    std::chrono::duration<double> write_cost = t_after_write - t_after_join;
+    std::chrono::duration<double> render_time = t_after_render - t0;
+    std::chrono::duration<double> write_time = t_after_write - t_after_render;
 
     std::cout << "\nTimings (seconds):\n";
     std::cout << "  total: " << total.count() << "\n";
-    std::cout << "  spawn threads: " << spawn_cost.count() << "\n";
-    std::cout << "  thread runtime: " << threads_runtime.count() << "\n";
-    std::cout << "  write image: " << write_cost.count() << "\n";
+    std::cout << "  render time: " << render_time.count() << "\n";
+    std::cout << "  write image: " << write_time.count() << "\n";
+
     return 0;
 }
