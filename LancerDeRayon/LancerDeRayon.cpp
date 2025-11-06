@@ -68,6 +68,12 @@ public:
     }
 };
 
+struct Light {
+    Vector position;
+    Vector emission;
+};
+
+
 void write_image(const std::string& filename, int width, int height, const std::vector<Pixel>& p) {
     std::ofstream out(filename, std::ios::binary);
     if (!out) {
@@ -139,43 +145,51 @@ Pixel radiance(const Rayon& r) {
         return s;
         }();
 
-    Vector light_pos({ 500.0f, 500.0f, 500.0f });
-	Vector light_emission({200000.0f, 200000.0f,200000.0f });
+    std::vector<Light> lights = {
+    { Vector({500.0f, 500.0f, 500.0f}), Vector({200000.0f, 200000.0f, 200000.0f}) },
+    { Vector({500.0f, 800.0f, 500.0f}), Vector({100000.0f, 100000.0f, 150000.0f}) }
+    };
+
+    Vector total_light({ 0.0f, 0.0f, 0.0f });
 
     auto hit = intersectMult(r, scene);
     if (hit.first != -1) {
         float t = hit.second;
         const Object& hitObject = scene[hit.first];
         Vector x = r.origin + (r.direction * t);
-        Vector direction_to_light = light_pos - x;
         Vector normal = (x - hitObject.sphere.center).normalize();
-        float light_distance = direction_to_light.dot(direction_to_light);
-		Vector direction_to_light_normalized = direction_to_light.normalize();
-        float coef = std::max(0.0f, normal.dot(direction_to_light_normalized))/light_distance;
-		float epsilon = 0.1f;
-		auto hit_Light = intersectMult(Rayon(x+ direction_to_light_normalized* epsilon, direction_to_light_normalized), scene);
-		//Ma logique est opposée à celle de guibou sur ce qui suit pour une raison que j'ignore (Il avait tort, c'est pour ça gneheheh)
-        bool canSeeLightSource = true;
-        if (hit_Light.first != -1) {
-            float t_block = hit_Light.second;
-            if ((t_block * t_block) < light_distance) {
-                canSeeLightSource = false;
-            }
-        }
-        Vector visibility;
-        if (canSeeLightSource) {
-			visibility = Vector({ 1.0f,1.0f,1.0f });
-        }
-        else {
 
-            visibility = Vector({ 0.0f,0.0f,0.0f });
+        for (const auto& light : lights) {
+            Vector direction_to_light = light.position - x;
+            float light_distance = direction_to_light.dot(direction_to_light);
+            Vector direction_to_light_normalized = direction_to_light.normalize();
+
+            float coef = std::max(0.0f, normal.dot(direction_to_light_normalized)) / light_distance;
+
+            float epsilon = 0.1f;
+            auto hit_Light = intersectMult(Rayon(x + direction_to_light_normalized * epsilon, direction_to_light_normalized), scene);
+
+            bool canSeeLightSource = true;
+            if (hit_Light.first != -1) {
+                float t_block = hit_Light.second;
+                if ((t_block * t_block) < light_distance) {
+                    canSeeLightSource = false;
+                }
+            }
+
+            Vector visibility = canSeeLightSource ? Vector({ 1.0f, 1.0f, 1.0f })
+                : Vector({ 0.0f, 0.0f, 0.0f });
+
+            // Contribution de cette lumière
+            total_light = total_light + (visibility * (hitObject.material.color * coef) * light.emission);
         }
-        Vector tonemap = visibility *(hitObject.material.color * coef) * light_emission;
-        return Pixel(tonemap);
+
+        return Pixel(total_light);
     }
     else {
         return Pixel::BLACK;
     }
+
 }
 
 Pixel raytrace(float x, float y) {
