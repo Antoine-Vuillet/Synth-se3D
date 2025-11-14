@@ -84,6 +84,25 @@ struct Light {
     Vector emission;
 };
 
+static const std::vector<Object> scene = []() {
+    std::vector<Object> s;
+    s.reserve(7);
+    s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
+    s.push_back(Object(Sphere(Vector({ 700.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Glass)));
+	s.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur droit
+	s.push_back(Object(Sphere(Vector({ -100000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 0.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur gauche
+	s.push_back(Object(Sphere(Vector({ 500.0f, 101000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur bas
+	s.push_back(Object(Sphere(Vector({ 500.0f, -100000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur haut
+	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
+	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
+    return s;
+    }();
+
+std::vector<Light> lights = {
+    {Vector({500.0f, 500.0f, 500.0f}), Vector({200000.0f,200000.0f,200000.0f})},
+    {Vector({500.0f, 800.0f, 500.0f}), Vector({100000.0f,100000.0f,200000.0f})}
+};
+
 void write_image(const std::string& filename, int width, int height, const std::vector<Pixel>& p) {
     std::ofstream out(filename, std::ios::binary);
     if (!out) {
@@ -146,25 +165,27 @@ Vector reflect(Vector n, Vector wi) {
     return (n * (2 * proj) + wi);
 }
 
-Vector radiance(const Rayon& r) {
-    static const std::vector<Object> scene = []() {
-        std::vector<Object> s;
-        s.reserve(7);
-        s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
-        s.push_back(Object(Sphere(Vector({ 700.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
-        s.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse)));
-        s.push_back(Object(Sphere(Vector({ -100000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 0.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
-        s.push_back(Object(Sphere(Vector({ 500.0f, 101000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
-        s.push_back(Object(Sphere(Vector({ 500.0f, -100000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
-        s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));
-        return s;
-        }();
+std::pair<float,Vector>* refract(float iorp, Vector nl, Vector direction, bool outside) {
+	float ior = iorp;
+    if (outside)
+    {
+		ior = 1.0f / iorp;
+    }
+	float cos1 = direction.dot(nl);
+	float cos2 = 1 - ior * ior * (1 - cos1 * cos1);
+    if (cos2 < 0) {
+		return NULL;
+    }
+    else {
+		Vector tdir = ((direction * ior) - (nl * ((cos1 * ior + sqrt(cos2))))).normalize();
+		float r0 = pow((ior - 1) / (ior + 1),2);
+		float cosTheta = outside ? -cos1 : tdir.dot(nl);
+        float reflectCoef = r0 + (1 - r0) * pow(cosTheta, 5);
+		return new std::pair<float, Vector>(1-reflectCoef, tdir);
+    }
+}
 
-    std::vector<Light> lights = {
-        {Vector({500.0f, 500.0f, 500.0f}), Vector({200000.0f,200000.0f,200000.0f})},
-        {Vector({500.0f, 800.0f, 500.0f}), Vector({100000.0f,100000.0f,200000.0f})}
-    };
-
+Pixel radiance(const Rayon& r, int Maxbounce) {
     Vector total_light({ 0.0f,0.0f,0.0f });
 
     auto hit = intersectMult(r, scene);
@@ -200,23 +221,44 @@ Vector radiance(const Rayon& r) {
                 total_light = total_light + visibility * (hitObject.material.color * coef) * light.emission;
             }
 
-            return Pixel(total_light).color;
+            return Pixel(total_light);
+        }
+        else if (Maxbounce>=10)
+        {
+            return Pixel::BLACK;
         }
         else if (hitObject.material.behaviour==MaterialBehaviour::Glass)
         {
-            return Pixel::BLACK.color;
+			bool outside = (r.direction.dot(normal) < 0);
+			Vector normal2 = normal;
+            if (!outside) {
+				normal2 = normal * -1;
+            }
+            std::pair<float,Vector>* transmittedRay = refract(1.5,normal2, r.direction, outside);
+            if (transmittedRay == NULL) {
+                Vector reflectedDirection = reflect(normal, r.direction);
+                Rayon reflectedRay = Rayon(x + (reflectedDirection * epsilon), reflectedDirection);
+                return radiance(reflectedRay, Maxbounce+1);
+            }
+            else {
+				Vector refractedDirection = transmittedRay->second;
+                Rayon reflectedRay = Rayon(x + (refractedDirection * epsilon), refractedDirection);
+                return radiance(reflectedRay, Maxbounce+1);
+            }
         }
         else if (hitObject.material.behaviour == MaterialBehaviour::Mirror) {
-            Vector reflectedDirection = reflect(normal, r.direction);
-            Rayon reflectedRay = Rayon(x + (reflectedDirection * x), reflectedDirection);
-            
+            Vector reflectedDirection = reflect(normal*-1, r.direction);
+            Rayon reflectedRay = Rayon(x + (reflectedDirection * epsilon), reflectedDirection);
+            return radiance(reflectedRay, Maxbounce+1);
         }
         
     }
     else {
-        return Pixel::BLACK.color;
+        return Pixel::BLACK;
     }
 }
+
+
 
 Pixel raytrace(float x, float y) {
     float coefOpening = 1.001f;
@@ -225,7 +267,7 @@ Pixel raytrace(float x, float y) {
     Vector f = Vector({ coefOpening * n2.getValues()[0], coefOpening * n2.getValues()[1], 1.0f }) + Vector({500,500,0});
     Vector dir = (f - n).normalize();
     Rayon r(n, dir);
-    return radiance(r);
+    return radiance(r,0);
 }
 
 int main() {
@@ -243,7 +285,7 @@ int main() {
     std::atomic<int> rowsDone(0);
     const int progressInterval = 50;
 
-#pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static)
     for (int y = 0; y < height; ++y) {
         // Thread-local random generator for antialiasing
         thread_local std::mt19937 rng(std::random_device{}());
