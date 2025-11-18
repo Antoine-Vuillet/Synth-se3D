@@ -33,6 +33,14 @@ public:
     Vector operator*(const Vector& o) const noexcept { return Vector(x * o.x, y * o.y, z * o.z); }
 
     float dot(const Vector& o) const noexcept { return x * o.x + y * o.y + z * o.z; }
+
+    Vector cross(const Vector& o) const noexcept {
+        return Vector(
+            y * o.z - z * o.y,
+            z * o.x - x * o.z,
+            x * o.y - y * o.x
+        );
+    }
     float length() const noexcept { return std::sqrt(dot(*this)); }
 
     static Vector translate(const Vector& v1, const Vector& v2) noexcept { return v1 + v2; }

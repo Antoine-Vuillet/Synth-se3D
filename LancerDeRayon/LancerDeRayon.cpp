@@ -35,6 +35,22 @@ Sphere::Sphere(const Vector& center, float radius)
     this->center = center;
     this->radius = radius;
 }
+
+class Triangle
+{
+public:
+	Triangle(const Vector& v0, const Vector& v1, const Vector& v2);
+	Vector v0;
+	Vector v1;
+	Vector v2;
+};
+Triangle::Triangle(const Vector& v0, const Vector& v1, const Vector& v2)
+{
+    this->v0 = v0;
+    this->v1 = v1;
+    this->v2 = v2;
+}
+
 enum class MaterialBehaviour {
     Diffuse,
     Glass,
@@ -66,16 +82,23 @@ public:
     }
 };
 
+enum class ObjectType {
+    Sphere,
+    Triangle
+};
+
+
 class Object {
 public:
+	ObjectType type;
     Sphere sphere;
+	Triangle triangle;
     Material material;
-    Object(const Sphere& sphere, const Material& material)
-        : sphere(sphere), material(material) {
+    Object(const Sphere& s, const Material& m)
+        : type(ObjectType::Sphere), sphere(s), triangle(Vector({ 0,0,0 }), Vector({ 0,0,0 }), Vector({ 0,0,0 })), material(m) {
     }
-    friend std::ostream& operator<<(std::ostream& os, const Object& obj) {
-        os << "Object(" << obj.sphere.center << ", " << obj.sphere.radius << ", " << obj.material << ")";
-        return os;
+    Object(const Triangle& t, const Material& m)
+        : type(ObjectType::Triangle), sphere(Vector({ 0,0,0 }), 0.0f), triangle(t), material(m) {
     }
 };
 
@@ -89,12 +112,13 @@ static const std::vector<Object> scene = []() {
     s.reserve(7);
     s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
     s.push_back(Object(Sphere(Vector({ 700.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Glass)));
+    s.push_back(Object(Triangle(Vector({ 500.0f,300.0f,600.0f }), Vector({ 300.0f,700.0f,600.0f }), Vector({ 700.0f,700.0f,600.0f })), Material(Vector({255.0f,255.0f,255.0f}), MaterialBehaviour::Mirror)));
 	s.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur droit
 	s.push_back(Object(Sphere(Vector({ -100000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 0.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur gauche
 	s.push_back(Object(Sphere(Vector({ 500.0f, 101000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur bas
 	s.push_back(Object(Sphere(Vector({ 500.0f, -100000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur haut
 	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
-	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
+	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
     return s;
     }();
 
@@ -146,11 +170,50 @@ float intersect(const Rayon& r, const Sphere& s) {
     return -1.0f;
 }
 
-std::pair<int, float> intersectMult(const Rayon& r, const std::vector<Object>& objects) {
+float intersectTriangle(Rayon r,
+    Triangle tr)
+{
+    const float EPSILON = 0.1;
+    Vector vertex0 = tr.v0;
+    Vector vertex1 = tr.v1;
+    Vector vertex2 = tr.v2;
+    Vector edge1, edge2, h, s, q;
+    float a, f, u, v;
+    edge1 = vertex1 - vertex0;
+    edge2 = vertex2 - vertex0;
+    h = r.direction.cross(edge2);
+    a = edge1.dot(h);
+    if (a > -EPSILON && a < EPSILON)
+        return -1.0f;
+    f = 1.0 / a;
+    s = r.origin - vertex0;
+    u = f * (s.dot(h));
+    if (u < 0.0 || u > 1.0)
+        return -1.0f;
+    q = s.cross(edge1);
+    v = f * r.direction.dot(q);
+    if (v < 0.0 || u + v > 1.0)
+        return -1.0f;
+    float t = f * edge2.dot(q);
+    if (t > EPSILON)
+    {
+        return t;
+    }
+    else
+        return -1;
+}
+
+std::pair<int, float> intersectMult(const Rayon& r, const std::vector<Object>& scene1) {
     int hitIndex = -1;
     float closest = std::numeric_limits<float>::infinity();
-    for (size_t i = 0; i < objects.size(); ++i) {
-        float t = intersect(r, objects[i].sphere);
+    for (size_t i = 0; i < scene1.size(); ++i) {
+        float t = -1.0f;
+
+        if (scene1[i].type == ObjectType::Sphere)
+            t = intersect(r, scene1[i].sphere);
+
+        else if (scene1[i].type == ObjectType::Triangle)
+            t = intersectTriangle(r, scene1[i].triangle);
         if (t >= 0.0f && t < closest) {
             closest = t;
             hitIndex = static_cast<int>(i);
@@ -193,7 +256,18 @@ Pixel radiance(const Rayon& r, int Maxbounce) {
         float t = hit.second;
         const Object& hitObject = scene[hit.first];
         Vector x = r.origin + (r.direction * t);
-        Vector normal = (x - hitObject.sphere.center).normalize();
+        Vector normal;
+
+        if (hitObject.type == ObjectType::Sphere) {
+            normal = (x - hitObject.sphere.center).normalize();
+        }
+        else { // Triangle
+            Vector edge1 = hitObject.triangle.v1 - hitObject.triangle.v0;
+            Vector edge2 = hitObject.triangle.v2 - hitObject.triangle.v0;
+            normal = edge1.cross(edge2).normalize();
+            if (normal.dot(r.direction) > 0)
+                normal = normal * -1.0f;
+        }
         float epsilon = 0.1f;
         if (hitObject.material.behaviour == MaterialBehaviour::Diffuse) {
             for (const auto& light : lights) {
