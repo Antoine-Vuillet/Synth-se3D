@@ -1,3 +1,4 @@
+#define TINYOBJLOADER_IMPLEMENTATION
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "MyVector.h"
 #include "Pixel.h"
 #include "Rayon.h"
+#include "tiny_obj_loader.h"
 #include <omp.h>
 #include <random>
 
@@ -107,7 +109,90 @@ struct Light {
     Vector emission;
 };
 
-static const std::vector<Object> scene = []() {
+std::vector<Object> loadOBJ(const std::string& filename)
+{
+    tinyobj::ObjReaderConfig config;
+    config.mtl_search_path = "./";
+
+    tinyobj::ObjReader reader;
+
+    if (!reader.ParseFromFile(filename, config)) {
+        if (!reader.Error().empty())
+            std::cerr << "TinyObjReader Error: " << reader.Error() << "\n";
+        exit(1);
+    }
+
+    if (!reader.Warning().empty())
+        std::cout << "TinyObjReader Warning: " << reader.Warning() << "\n";
+
+    const auto& attrib = reader.GetAttrib();
+    const auto& shapes = reader.GetShapes();
+    const auto& materials = reader.GetMaterials();
+
+    std::vector<Object> objects;
+
+    for (const auto& shape : shapes) {
+        size_t index_offset = 0;
+
+        for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
+            size_t fv = shape.mesh.num_face_vertices[f];
+
+            if (fv != 3) {
+                std::cerr << "Non-triangle face found, FV=" << fv << "\n";
+                index_offset += fv;
+                continue;
+            }
+
+            tinyobj::index_t i0 = shape.mesh.indices[index_offset + 0];
+            tinyobj::index_t i1 = shape.mesh.indices[index_offset + 1];
+            tinyobj::index_t i2 = shape.mesh.indices[index_offset + 2];
+
+            Vector v0({
+                attrib.vertices[3 * i0.vertex_index + 0],
+                attrib.vertices[3 * i0.vertex_index + 1],
+                attrib.vertices[3 * i0.vertex_index + 2]
+                });
+
+            Vector v1({
+                attrib.vertices[3 * i1.vertex_index + 0],
+                attrib.vertices[3 * i1.vertex_index + 1],
+                attrib.vertices[3 * i1.vertex_index + 2]
+                });
+
+            Vector v2({
+                attrib.vertices[3 * i2.vertex_index + 0],
+                attrib.vertices[3 * i2.vertex_index + 1],
+                attrib.vertices[3 * i2.vertex_index + 2]
+                });
+
+            int mat_id = shape.mesh.material_ids[f];
+
+            Material mat_obj = Material({ 255, 255, 255 }, MaterialBehaviour::Diffuse);
+
+            if (mat_id >= 0 && mat_id < (int)materials.size()) {
+                const auto& mat = materials[mat_id];
+                mat_obj = Material(
+                    Vector({
+                        mat.diffuse[0] * 255.0f,
+                        mat.diffuse[1] * 255.0f,
+                        mat.diffuse[2] * 255.0f
+                        }),
+                    MaterialBehaviour::Diffuse
+                );
+            }
+
+            objects.push_back(Object(Triangle(v0, v1, v2), mat_obj));
+
+            index_offset += fv;
+        }
+    }
+
+    return objects;
+}
+
+
+
+/*static const std::vector<Object> scene = []() {
     std::vector<Object> s;
     s.reserve(7);
     s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
@@ -120,11 +205,16 @@ static const std::vector<Object> scene = []() {
 	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
 	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
     return s;
-    }();
+    }();*/
+
+Material white(Vector({ 255,255,255 }), MaterialBehaviour::Diffuse);
+
+// Load the OBJ
+std::vector<Object> scene = loadOBJ("C:/Users/avuillet/Documents/Synthese_image_3d/Synth-se3D/LancerDeRayon/dragon_vrip.obj");
 
 std::vector<Light> lights = {
-    {Vector({500.0f, 500.0f, 500.0f}), Vector({200000.0f,200000.0f,200000.0f})},
-    {Vector({500.0f, 800.0f, 500.0f}), Vector({100000.0f,100000.0f,200000.0f})}
+    {Vector({250.0f, 250.0f, 250.0f}), Vector({100000.0f,100000.0f,100000.0f})}/*
+    {Vector({250.0f, 400.0f, 250.0f}), Vector({1.0f,1.0f,1.0f})}*/
 };
 
 void write_image(const std::string& filename, int width, int height, const std::vector<Pixel>& p) {
@@ -349,8 +439,8 @@ int main() {
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
-    int width = 1000;
-    int height = 1000;
+    int width = 800;
+    int height = 800;
     std::vector<Pixel> pixels(width * height);
 
     using clock = std::chrono::high_resolution_clock;
