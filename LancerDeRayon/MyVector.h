@@ -41,6 +41,16 @@ public:
             x * o.y - y * o.x
         );
     }
+
+    float operator[](int i) const noexcept {
+        return (i == 0 ? x : (i == 1 ? y : z));
+    }
+
+    float& operator[](int i) noexcept {
+        return (i == 0 ? x : (i == 1 ? y : z));
+    }
+
+
     float length() const noexcept { return std::sqrt(dot(*this)); }
 
     static Vector translate(const Vector& v1, const Vector& v2) noexcept { return v1 + v2; }

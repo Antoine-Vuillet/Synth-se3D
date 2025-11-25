@@ -129,6 +129,27 @@ std::vector<Object> loadOBJ(const std::string& filename)
     const auto& shapes = reader.GetShapes();
     const auto& materials = reader.GetMaterials();
 
+    // First, compute bounding box
+    Vector minV({ FLT_MAX, FLT_MAX, FLT_MAX });
+    Vector maxV({ -FLT_MAX, -FLT_MAX, -FLT_MAX });
+
+    for (size_t v = 0; v < attrib.vertices.size() / 3; v++) {
+        float x = attrib.vertices[3 * v + 0];
+        float y = attrib.vertices[3 * v + 1];
+        float z = attrib.vertices[3 * v + 2];
+
+        minV.x = std::min(minV.x, x);
+        minV.y = std::min(minV.y, y);
+        minV.z = std::min(minV.z, z);
+
+        maxV.x = std::max(maxV.x, x);
+        maxV.y = std::max(maxV.y, y);
+        maxV.z = std::max(maxV.z, z);
+    }
+
+    float maxRange = std::max({ maxV.x - minV.x, maxV.y - minV.y, maxV.z - minV.z });
+    float scale = 800.0f / maxRange;
+
     std::vector<Object> objects;
 
     for (const auto& shape : shapes) {
@@ -147,27 +168,22 @@ std::vector<Object> loadOBJ(const std::string& filename)
             tinyobj::index_t i1 = shape.mesh.indices[index_offset + 1];
             tinyobj::index_t i2 = shape.mesh.indices[index_offset + 2];
 
-            Vector v0({
-                attrib.vertices[3 * i0.vertex_index + 0],
-                attrib.vertices[3 * i0.vertex_index + 1],
-                attrib.vertices[3 * i0.vertex_index + 2]
-                });
+            auto transformVertex = [&](const tinyobj::index_t& idx) {
+                return Vector({
+                    (attrib.vertices[3 * idx.vertex_index + 0] - minV.x) * scale+100,       // X stays the same
+                    (maxV.y - attrib.vertices[3 * idx.vertex_index + 1]) * scale+100,       // Flip Y and translate
+                    (attrib.vertices[3 * idx.vertex_index + 2] - minV.z) * scale        // Z stays the same
+                    });
+                };
 
-            Vector v1({
-                attrib.vertices[3 * i1.vertex_index + 0],
-                attrib.vertices[3 * i1.vertex_index + 1],
-                attrib.vertices[3 * i1.vertex_index + 2]
-                });
 
-            Vector v2({
-                attrib.vertices[3 * i2.vertex_index + 0],
-                attrib.vertices[3 * i2.vertex_index + 1],
-                attrib.vertices[3 * i2.vertex_index + 2]
-                });
+            Vector v0 = transformVertex(i0);
+            Vector v1 = transformVertex(i1);
+            Vector v2 = transformVertex(i2);
 
             int mat_id = shape.mesh.material_ids[f];
 
-            Material mat_obj = Material({ 255, 255, 255 }, MaterialBehaviour::Diffuse);
+            Material mat_obj({ 255,255,255 }, MaterialBehaviour::Diffuse);
 
             if (mat_id >= 0 && mat_id < (int)materials.size()) {
                 const auto& mat = materials[mat_id];
@@ -191,29 +207,8 @@ std::vector<Object> loadOBJ(const std::string& filename)
 }
 
 
-
-/*static const std::vector<Object> scene = []() {
-    std::vector<Object> s;
-    s.reserve(7);
-    s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
-    s.push_back(Object(Sphere(Vector({ 700.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Glass)));
-    s.push_back(Object(Triangle(Vector({ 500.0f,300.0f,600.0f }), Vector({ 300.0f,700.0f,600.0f }), Vector({ 700.0f,700.0f,600.0f })), Material(Vector({255.0f,255.0f,255.0f}), MaterialBehaviour::Mirror)));
-	s.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur droit
-	s.push_back(Object(Sphere(Vector({ -100000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 0.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur gauche
-	s.push_back(Object(Sphere(Vector({ 500.0f, 101000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur bas
-	s.push_back(Object(Sphere(Vector({ 500.0f, -100000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur haut
-	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
-	s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
-    return s;
-    }();*/
-
-Material white(Vector({ 255,255,255 }), MaterialBehaviour::Diffuse);
-
-// Load the OBJ
-std::vector<Object> scene = loadOBJ("C:/Users/avuillet/Documents/Synthese_image_3d/Synth-se3D/LancerDeRayon/dragon_vrip.obj");
-
 std::vector<Light> lights = {
-    {Vector({250.0f, 250.0f, 250.0f}), Vector({100000.0f,100000.0f,100000.0f})}/*
+    {Vector({100.0f, 500.0f, 100.0f}), Vector({100000.0f,100000.0f,100000.0f})}/*
     {Vector({250.0f, 400.0f, 250.0f}), Vector({1.0f,1.0f,1.0f})}*/
 };
 
@@ -338,7 +333,7 @@ std::pair<float,Vector>* refract(float iorp, Vector nl, Vector direction, bool o
     }
 }
 
-Pixel radiance(const Rayon& r, int Maxbounce) {
+Pixel radiance(const Rayon& r, std::vector<Object> scene, int Maxbounce) {
     Vector total_light({ 0.0f,0.0f,0.0f });
 
     auto hit = intersectMult(r, scene);
@@ -402,45 +397,71 @@ Pixel radiance(const Rayon& r, int Maxbounce) {
             if (transmittedRay == NULL) {
                 Vector reflectedDirection = reflect(normal, r.direction);
                 Rayon reflectedRay = Rayon(x + (reflectedDirection * epsilon), reflectedDirection);
-                return radiance(reflectedRay, Maxbounce+1);
+                return radiance(reflectedRay,scene, Maxbounce+1);
             }
             else {
 				Vector refractedDirection = transmittedRay->second;
                 Rayon reflectedRay = Rayon(x + (refractedDirection * epsilon), refractedDirection);
-                return radiance(reflectedRay, Maxbounce+1);
+                return radiance(reflectedRay,scene, Maxbounce+1);
             }
         }
         else if (hitObject.material.behaviour == MaterialBehaviour::Mirror) {
             Vector reflectedDirection = reflect(normal*-1, r.direction);
             Rayon reflectedRay = Rayon(x + (reflectedDirection * epsilon), reflectedDirection);
-            return radiance(reflectedRay, Maxbounce+1);
+            return radiance(reflectedRay,scene, Maxbounce+1);
         }
         
     }
     else {
-        return Pixel::BLACK;
+        return Pixel::RED;
     }
 }
 
 
 
-Pixel raytrace(float x, float y) {
+Pixel raytrace(float x, float y, std::vector<Object> scene) {
     float coefOpening = 1.001f;
     Vector n({ x, y, 0.0f });
     Vector n2 = n-Vector({500.0f, 500.0f, 0.0f});
     Vector f = Vector({ coefOpening * n2.getValues()[0], coefOpening * n2.getValues()[1], 1.0f }) + Vector({500,500,0});
     Vector dir = (f - n).normalize();
     Rayon r(n, dir);
-    return radiance(r,0);
+    return radiance(r,scene, 0);
 }
 
 int main() {
+
+    /*static const std::vector<Object> scene = []() {
+    std::vector<Object> s;
+    s.reserve(7);
+    s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
+    s.push_back(Object(Sphere(Vector({ 700.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Glass)));
+    s.push_back(Object(Triangle(Vector({ 500.0f,300.0f,600.0f }), Vector({ 300.0f,700.0f,600.0f }), Vector({ 700.0f,700.0f,600.0f })), Material(Vector({255.0f,255.0f,255.0f}), MaterialBehaviour::Mirror)));
+    s.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur droit
+    s.push_back(Object(Sphere(Vector({ -100000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 0.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur gauche
+    s.push_back(Object(Sphere(Vector({ 500.0f, 101000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur bas
+    s.push_back(Object(Sphere(Vector({ 500.0f, -100000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur haut
+    s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
+    s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
+    return s;
+    }();*/
+
+    std::vector<Object> scene= loadOBJ("C:/Users/avuillet/Documents/Synthese_image_3d/Synth-se3D/LancerDeRayon/suzanne.obj");
+
+    scene.reserve(scene.size() + 8);
+    scene.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur droit
+    scene.push_back(Object(Sphere(Vector({ -100000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 0.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur gauche
+    scene.push_back(Object(Sphere(Vector({ 500.0f, 101000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur bas
+    scene.push_back(Object(Sphere(Vector({ 500.0f, -100000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur haut
+    scene.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
+    scene.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
+
     // Désactiver la synchronisation iostream -> gain léger au démarrage
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
 
-    int width = 800;
-    int height = 800;
+    int width = 1000;
+    int height = 1000;
     std::vector<Pixel> pixels(width * height);
 
     using clock = std::chrono::high_resolution_clock;
@@ -462,7 +483,7 @@ int main() {
             for (int s = 0; s < samples; ++s) {
                 float u = x + randomFloat();
                 float v = y + randomFloat();
-                Pixel p = raytrace(u, v);
+                Pixel p = raytrace(u, v, scene);
                 colorSum = colorSum + Vector({ p.r(), p.g(), p.b() });
             }
             colorSum = colorSum * (1.0f / samples);
