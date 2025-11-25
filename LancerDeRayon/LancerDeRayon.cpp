@@ -634,7 +634,7 @@ int main() {
     return s;
     }();*/
 
-    std::vector<Object> scene= loadOBJ("C:/Users/avuillet/Documents/Synthese_image_3d/Synth-se3D/LancerDeRayon/suzanne.obj");
+    std::vector<Object> scene= loadOBJ("C:/Users/avuillet/Documents/Synthese_image_3d/Synth-se3D/LancerDeRayon/dragon_vrip.obj");
 
     scene.reserve(scene.size() + 8);
     scene.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur droit
