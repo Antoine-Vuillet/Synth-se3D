@@ -14,6 +14,7 @@
 #include "tiny_obj_loader.h"
 #include <omp.h>
 #include <random>
+#include <optional>
 
 
 thread_local std::mt19937 rng(std::random_device{}());
@@ -103,6 +104,116 @@ public:
         : type(ObjectType::Triangle), sphere(Vector({ 0,0,0 }), 0.0f), triangle(t), material(m) {
     }
 };
+
+
+struct AABB {
+    Vector min;
+    Vector max;
+
+    AABB() :
+        min(Vector({ FLT_MAX, FLT_MAX, FLT_MAX })),
+        max(Vector({ -FLT_MAX, -FLT_MAX, -FLT_MAX })) {
+    }
+
+    void expand(const Vector& p) {
+        min.x = std::min(min.x, p.x);
+        min.y = std::min(min.y, p.y);
+        min.z = std::min(min.z, p.z);
+        max.x = std::max(max.x, p.x);
+        max.y = std::max(max.y, p.y);
+        max.z = std::max(max.z, p.z);
+    }
+
+    void expand(const AABB& b) {
+        expand(b.min);
+        expand(b.max);
+    }
+};
+
+AABB computeBounds(const Object& obj) {
+    AABB box;
+
+    if (obj.type == ObjectType::Sphere) {
+        Vector c = obj.sphere.center;
+        float r = obj.sphere.radius;
+
+        box.expand(Vector({ c.x - r, c.y - r, c.z - r }));
+        box.expand(Vector({ c.x + r, c.y + r, c.z + r }));
+    }
+    else {
+        box.expand(obj.triangle.v0);
+        box.expand(obj.triangle.v1);
+        box.expand(obj.triangle.v2);
+    }
+
+    return box;
+}
+
+
+struct BVHNode
+{
+    Vector aabbMin, aabbMax;     // 24 bytes
+    int leftChild, rightChild;  // 8 bytes
+    bool isLeaf;                 // 4 bytes
+    int firstPrim, primCount;   // 8 bytes; total: 44 bytes
+};
+
+int buildBVH(
+    std::vector<BVHNode>& nodes,
+    std::vector<int>& primIdx,
+    const std::vector<AABB>& bounds,
+    int start, int end)
+{
+    int nodeIndex = nodes.size();
+    nodes.push_back(BVHNode());
+
+    // Build node bounding box
+    AABB nodeBox;
+    for (int i = start; i < end; ++i)
+        nodeBox.expand(bounds[primIdx[i]]);
+
+    BVHNode& node = nodes[nodeIndex];
+    node.aabbMin = nodeBox.min;
+    node.aabbMax = nodeBox.max;
+
+    int count = end - start;
+
+    // Leaf condition
+    if (count <= 2) {
+        node.isLeaf = true;
+        node.firstPrim = start;
+        node.primCount = count;
+        node.leftChild = node.rightChild = -1;
+        return nodeIndex;
+    }
+
+    // Determine split axis (longest dimension)
+    Vector size = nodeBox.max - nodeBox.min;
+    int axis = 0;
+    if (size.y > size.x && size.y > size.z) axis = 1;
+    else if (size.z > size.x) axis = 2;
+
+    // Sort primitives by centroid
+    std::sort(primIdx.begin() + start, primIdx.begin() + end,
+        [&](int a, int b) {
+            Vector ca = (bounds[a].min + bounds[a].max) * 0.5f;
+            Vector cb = (bounds[b].min + bounds[b].max) * 0.5f;
+            return (axis == 0 ? ca.x : axis == 1 ? ca.y : ca.z) <
+                (axis == 0 ? cb.x : axis == 1 ? cb.y : cb.z);
+        });
+
+    int mid = (start + end) / 2;
+
+    node.isLeaf = false;
+    node.firstPrim = -1;
+
+    node.leftChild = buildBVH(nodes, primIdx, bounds, start, mid);
+    node.rightChild = buildBVH(nodes, primIdx, bounds, mid, end);
+
+    return nodeIndex;
+}
+
+
 
 struct Light {
     Vector position;
@@ -240,6 +351,7 @@ void write_image(const std::string& filename, int width, int height, const std::
     out.close();
 }
 
+
 float intersect(const Rayon& r, const Sphere& s) {
     Vector oc = r.origin - s.center;
     float a = r.direction.dot(r.direction);
@@ -288,6 +400,37 @@ float intersectTriangle(Rayon r,
         return -1;
 }
 
+float intersectPrimitive(const Rayon& r, const Object& obj)
+{
+    if (obj.type == ObjectType::Sphere)
+        return intersect(r, obj.sphere);
+
+    else // triangle
+        return intersectTriangle(r, obj.triangle);
+}
+
+
+bool intersectAABB(const Rayon& r, const Vector aabbMin, const Vector aabbMax) {
+    float tmin = (aabbMin.x - r.origin.x) * r.invDir.x;
+    float tmax = (aabbMax.x - r.origin.x) * r.invDir.x;
+    if (tmin > tmax) std::swap(tmin, tmax);
+
+    float tymin = (aabbMin.y - r.origin.y) * r.invDir.y;
+    float tymax = (aabbMax.y - r.origin.y) * r.invDir.y;
+    if (tymin > tymax) std::swap(tymin, tymax);
+    if ((tmin > tymax) || (tymin > tmax)) return false;
+    tmin = std::max(tmin, tymin);
+    tmax = std::min(tmax, tymax);
+
+    float tzmin = (aabbMin.z - r.origin.z) * r.invDir.z;
+    float tzmax = (aabbMax.z - r.origin.z) * r.invDir.z;
+    if (tzmin > tzmax) std::swap(tzmin, tzmax);
+    if ((tmin > tzmax) || (tzmin > tmax)) return false;
+
+    return true;
+}
+
+
 std::pair<int, float> intersectMult(const Rayon& r, const std::vector<Object>& scene1) {
     int hitIndex = -1;
     float closest = std::numeric_limits<float>::infinity();
@@ -307,6 +450,48 @@ std::pair<int, float> intersectMult(const Rayon& r, const std::vector<Object>& s
     if (hitIndex == -1) return std::make_pair(-1, -1.0f);
     return std::make_pair(hitIndex, closest);
 }
+
+
+
+std::pair<int, float> intersectBVH(
+    const Rayon& r,
+    const std::vector<BVHNode>& nodes,
+    const std::vector<int>& primIdx,
+    const std::vector<Object>& scene)
+{
+    int stack[64];
+    int sp = 0;
+    stack[sp++] = 0;
+
+    float closest = std::numeric_limits<float>::infinity();
+    int hitIndex = -1;
+
+    while (sp > 0) {
+        int idx = stack[--sp];
+        const BVHNode& node = nodes[idx];
+
+        if (!intersectAABB(r, node.aabbMin, node.aabbMax)) continue;
+
+        if (node.isLeaf) {
+            for (int i = 0; i < node.primCount; ++i) {
+                int prim = primIdx[node.firstPrim + i];
+                float t = intersectPrimitive(r, scene[prim]);
+                if (t > 0 && t < closest) {
+                    closest = t;
+                    hitIndex = prim;
+                }
+            }
+        }
+        else {
+            stack[sp++] = node.leftChild;
+            stack[sp++] = node.rightChild;
+        }
+    }
+
+    if (hitIndex == -1) return { -1, -1.0f };
+    return { hitIndex, closest };
+}
+
 
 Vector reflect(Vector n, Vector wi) {
     float proj = -n.dot(wi);
@@ -333,10 +518,11 @@ std::pair<float,Vector>* refract(float iorp, Vector nl, Vector direction, bool o
     }
 }
 
-Pixel radiance(const Rayon& r, std::vector<Object> scene, int Maxbounce) {
+Pixel radiance(const Rayon& r,const std::vector<Object>& scene,const std::vector<BVHNode>& nodes,const std::vector<int>& primIdx,int Maxbounce)
+{
     Vector total_light({ 0.0f,0.0f,0.0f });
 
-    auto hit = intersectMult(r, scene);
+    auto hit = intersectBVH(r, nodes, primIdx, scene);
     if (hit.first != -1) {
         float t = hit.second;
         const Object& hitObject = scene[hit.first];
@@ -359,8 +545,9 @@ Pixel radiance(const Rayon& r, std::vector<Object> scene, int Maxbounce) {
                 Vector direction_to_light = light.position - x;
                 float light_distance = direction_to_light.dot(direction_to_light);
                 Vector direction_to_light_normalized = direction_to_light.normalize();
-                float coef = std::max(0.0f, normal.dot(direction_to_light_normalized)) / light_distance;                
-                auto hit_Light = intersectMult(Rayon(x + direction_to_light_normalized * epsilon, direction_to_light_normalized), scene);
+                float coef = std::max(0.0f, normal.dot(direction_to_light_normalized)) / light_distance;
+                auto hit_Light = intersectBVH(
+                    Rayon(x + direction_to_light_normalized * epsilon, direction_to_light_normalized),nodes,primIdx,scene);
                 //Ma logique est opposée à celle de guibou sur ce qui suit pour une raison que j'ignore (Il avait tort, c'est pour ça gneheheh)
                 bool canSeeLightSource = true;
                 if (hit_Light.first != -1) {
@@ -397,18 +584,18 @@ Pixel radiance(const Rayon& r, std::vector<Object> scene, int Maxbounce) {
             if (transmittedRay == NULL) {
                 Vector reflectedDirection = reflect(normal, r.direction);
                 Rayon reflectedRay = Rayon(x + (reflectedDirection * epsilon), reflectedDirection);
-                return radiance(reflectedRay,scene, Maxbounce+1);
+                return radiance(reflectedRay,scene, nodes, primIdx, Maxbounce+1);
             }
             else {
 				Vector refractedDirection = transmittedRay->second;
                 Rayon reflectedRay = Rayon(x + (refractedDirection * epsilon), refractedDirection);
-                return radiance(reflectedRay,scene, Maxbounce+1);
+                return radiance(reflectedRay,scene, nodes, primIdx, Maxbounce+1);
             }
         }
         else if (hitObject.material.behaviour == MaterialBehaviour::Mirror) {
             Vector reflectedDirection = reflect(normal*-1, r.direction);
             Rayon reflectedRay = Rayon(x + (reflectedDirection * epsilon), reflectedDirection);
-            return radiance(reflectedRay,scene, Maxbounce+1);
+            return radiance(reflectedRay,scene, nodes, primIdx, Maxbounce+1);
         }
         
     }
@@ -419,14 +606,15 @@ Pixel radiance(const Rayon& r, std::vector<Object> scene, int Maxbounce) {
 
 
 
-Pixel raytrace(float x, float y, std::vector<Object> scene) {
+Pixel raytrace(float x, float y,const std::vector<Object>& scene,const std::vector<BVHNode>& nodes,const std::vector<int>& primIdx)
+{
     float coefOpening = 1.001f;
     Vector n({ x, y, 0.0f });
     Vector n2 = n-Vector({500.0f, 500.0f, 0.0f});
     Vector f = Vector({ coefOpening * n2.getValues()[0], coefOpening * n2.getValues()[1], 1.0f }) + Vector({500,500,0});
     Vector dir = (f - n).normalize();
     Rayon r(n, dir);
-    return radiance(r,scene, 0);
+    return radiance(r, scene, nodes, primIdx, 0);
 }
 
 int main() {
@@ -456,6 +644,18 @@ int main() {
     scene.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
     scene.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
 
+    std::vector<AABB> bounds(scene.size());
+    for (int i = 0; i < scene.size(); ++i)
+        bounds[i] = computeBounds(scene[i]);
+
+    std::vector<int> primIdx(scene.size());
+    for (int i = 0;i < scene.size();++i) primIdx[i] = i;
+
+    std::vector<BVHNode> nodes;
+    nodes.reserve(scene.size() * 2);
+
+    int root = buildBVH(nodes, primIdx, bounds, 0, scene.size());
+
     // Désactiver la synchronisation iostream -> gain léger au démarrage
     std::ios::sync_with_stdio(false);
     std::cin.tie(nullptr);
@@ -483,7 +683,7 @@ int main() {
             for (int s = 0; s < samples; ++s) {
                 float u = x + randomFloat();
                 float v = y + randomFloat();
-                Pixel p = raytrace(u, v, scene);
+                Pixel p = raytrace(u, v, scene, nodes, primIdx);
                 colorSum = colorSum + Vector({ p.r(), p.g(), p.b() });
             }
             colorSum = colorSum * (1.0f / samples);
