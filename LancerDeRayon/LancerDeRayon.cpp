@@ -619,7 +619,7 @@ Pixel raytrace(float x, float y,const std::vector<Object>& scene,const std::vect
 
 int main() {
 
-    /*static const std::vector<Object> scene = []() {
+    static const std::vector<Object> scene = []() {
     std::vector<Object> s;
     s.reserve(7);
     s.push_back(Object(Sphere(Vector({ 300.0f, 700.0f, 700.0f }), 80.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Mirror)));
@@ -632,9 +632,9 @@ int main() {
     s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
     s.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
     return s;
-    }();*/
+    }();
 
-    std::vector<Object> scene= loadOBJ("C:/Users/avuillet/Documents/Synthese_image_3d/Synth-se3D/LancerDeRayon/dragon_vrip.obj");
+    /*std::vector<Object> scene = loadOBJ("C:/Users/avuillet/Documents/Synthese_image_3d/Synth-se3D/LancerDeRayon/dragon_vrip.obj");
 
     scene.reserve(scene.size() + 8);
     scene.push_back(Object(Sphere(Vector({ +101000.0f, 500.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur droit
@@ -643,7 +643,7 @@ int main() {
     scene.push_back(Object(Sphere(Vector({ 500.0f, -100000.0f, 250.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse))); //Mur haut
     scene.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, 101000.0f }), 100000.0f), Material(Vector({ 255.0f,255.0f,255.0f }), MaterialBehaviour::Diffuse)));  //Mur arrière
     scene.push_back(Object(Sphere(Vector({ 500.0f, 500.0f, -100100.0f }), 100000.0f), Material(Vector({ 255.0f,0.0f,0.0f }), MaterialBehaviour::Diffuse))); //Mur precaméra
-
+    */
     std::vector<AABB> bounds(scene.size());
     for (int i = 0; i < scene.size(); ++i)
         bounds[i] = computeBounds(scene[i]);
